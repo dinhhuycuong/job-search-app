@@ -11,10 +11,8 @@ class ClaudeService {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  async analyzeJobMatch(
-    job: LinkedInJobPosting,
-    resumeText: string
-  ): Promise<JobMatch> {
+  async analyzeJobMatch(job: LinkedInJobPosting, resumeText: string): Promise<JobMatch> {
+    console.log('Analyzing job:', job.id)
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= this.retryCount; attempt++) {

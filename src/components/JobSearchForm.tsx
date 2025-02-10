@@ -73,11 +73,39 @@ export default function JobSearchForm() {
     });
   };
 
+  const validateForm = () => {
+    const errors: string[] = [];
+    
+    if (!formData.jobTitle.trim()) {
+      errors.push('Job title is required');
+    }
+    
+    if (!formData.location.city.trim() || !formData.location.state.trim()) {
+      errors.push('Both city and state are required');
+    } else if (!/^[A-Z]{2}$/.test(formData.location.state.toUpperCase())) {
+      errors.push('State must be a valid 2-letter code');
+    }
+    
+    if (formData.resume && !['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      .includes(formData.resume.type)) {
+      errors.push('Resume must be a PDF or Word document');
+    }
+    
+    return errors;
+  };
+
   // Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+
+    const validationErrors = validateForm();
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join('. '));
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Initialize services
@@ -89,48 +117,41 @@ export default function JobSearchForm() {
         keywords: formData.jobTitle,
         location: `${formData.location.city}, ${formData.location.state}`,
         distance: formData.maxDistance.toString(),
-        f_TPR:
-          formData.postedDate === 'last24h'
-            ? TIME_FILTERS.PAST_24_HOURS
-            : formData.postedDate === 'lastWeek'
-              ? TIME_FILTERS.PAST_WEEK
-              : formData.postedDate === 'lastMonth'
-                ? TIME_FILTERS.PAST_MONTH
-                : undefined,
+        f_TPR: formData.postedDate === 'last24h'
+          ? TIME_FILTERS.PAST_24_HOURS
+          : formData.postedDate === 'lastWeek'
+            ? TIME_FILTERS.PAST_WEEK
+            : formData.postedDate === 'lastMonth'
+              ? TIME_FILTERS.PAST_MONTH
+              : undefined,
       };
 
+      console.log('Searching with params:', searchParams);
       const jobs = await linkedInService.searchJobsWithPagination(searchParams);
-      console.log('Jobs from LinkedIn:', jobs);
+      console.log('Jobs found:', jobs);
 
-      // If resume is provided, analyze matches
+      let matchedJobs = [...jobs];
+      
       if (formData.resume) {
         const resumeText = await readFileAsText(formData.resume);
-
-        const matchPromises = jobs.map((job) => claudeService.analyzeJobMatch(job, resumeText));
-
+        console.log('Analyzing resume matches...');
+        
+        const matchPromises = jobs.map(job => claudeService.analyzeJobMatch(job, resumeText));
         const matches = await Promise.all(matchPromises);
-
-        // Combine jobs with their match scores
-        const matchedJobs = jobs.map((job) => ({
+        
+        matchedJobs = jobs.map(job => ({
           ...job,
-          match: matches.find((m) => m.jobId === job.id),
+          match: matches.find(m => m.jobId === job.id),
         }));
-
-        // Sort by match score
+        
         matchedJobs.sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
-
-        setJobs(matchedJobs);
-      } else {
-        setJobs(jobs);
-
-        console.log('Matches from Claude:', matches);
-        console.log('Final matched jobs:', matchedJobs);
+        console.log('Jobs matched with resume:', matchedJobs);
       }
+
+      setJobs(matchedJobs);
     } catch (error) {
-      console.error('Error:', error);
-      setError(
-        error instanceof Error ? error.message : 'An error occurred while searching for jobs'
-      );
+      console.error('Search error:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred while searching for jobs');
     } finally {
       setIsLoading(false);
     }
@@ -163,7 +184,6 @@ export default function JobSearchForm() {
               <div className="space-y-2">
                 <Label htmlFor="posted-date">Posted Date</Label>
                 <Select
-                  id="posted-date"
                   value={formData.postedDate}
                   onValueChange={(value) => setFormData({ ...formData, postedDate: value })}
                 >
